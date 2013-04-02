@@ -162,44 +162,52 @@ class GearmanConnectionManager(object):
                 events |= gearman.io.WRITE
             poller.register(conn, events)
 
-    def poll_connections_until_stopped(self, submitted_connections, callback_fxn, timeout=None):
-        """Continue to poll our connections until we receive a stopping condition"""
+    def poll_connections_until_stopped(self, connections, callback_fxn, 
+                                       timeout=None):
+        """Continue to poll our connections until we receive a stopping 
+        condition"""
         stopwatch = gearman.util.Stopwatch(timeout)
-        submitted_connections = set(submitted_connections)
-        connection_map = {}
+        connections = set(connections)
 
         any_activity = False
         callback_ok = callback_fxn(any_activity)
-        connection_ok = compat.any(current_connection.connected for current_connection in submitted_connections)
+        connection_ok = compat.any(conn.connected for conn in connections)
+
         poller = gearman.io.get_connection_poller()
-        if connection_ok:
-            self._register_connections_with_poller(submitted_connections, 
-                    poller)
-            connection_map = dict([(c.fileno(), c) for c in
-                submitted_connections if c.connected])
 
         while connection_ok and callback_ok:
             time_remaining = stopwatch.get_time_remaining()
             if time_remaining == 0.0:
                 break
 
+            self._register_connections_with_poller(connections, poller)
+
             # Do a single robust select and handle all connection activity
-            read_connections, write_connections, dead_connections = self.poll_connections_once(poller, connection_map, timeout=time_remaining)
+            readable, writable, death = self.poll_connections_once(
+                poller, dict([(conn.fileno(), conn) 
+                              for conn in connections if conn.connected]), 
+                timeout=time_remaining)
 
             # Handle reads and writes and close all of the dead connections
-            read_connections, write_connections, dead_connections = self.handle_connection_activity(read_connections, write_connections, dead_connections)
+            readable, writable, death = self.handle_connection_activity(
+                readable, writable, death)
 
-            any_activity = compat.any([read_connections, write_connections, dead_connections])
+            any_activity = compat.any([readable, writable, death])
 
-            # Do not retry dead connections on the next iteration of the loop, as we closed them in handle_error
-            submitted_connections -= dead_connections
+            for conn in connections:
+                poller.unregister(conn)
+
+            # Do not retry dead connections on the next iteration of the loop, 
+            # as we closed them in handle_error
+            connections -= death 
 
             callback_ok = callback_fxn(any_activity)
-            connection_ok = compat.any(current_connection.connected for current_connection in submitted_connections)
+            connection_ok = compat.any(conn.connected for conn in connections)
 
         poller.close()
 
-        # We should raise here if we have no alive connections (don't go into a select polling loop with no connections)
+        # We should raise here if we have no alive connections (don't go into a 
+        # select polling loop with no connections)
         if not connection_ok:
             raise ServerUnavailable('Found no valid connections in list: %r' % self.connection_list)
 
