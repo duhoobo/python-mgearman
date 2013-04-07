@@ -12,6 +12,7 @@ from gearman.protocol import GEARMAN_PARAMS_FOR_COMMAND, GEARMAN_COMMAND_TEXT_CO
 
 gearman_logger = logging.getLogger(__name__)
 
+
 class GearmanConnection(object):
     """A connection between a client/worker and a server.  Can be used to reconnect (unlike a socket)
 
@@ -30,6 +31,7 @@ class GearmanConnection(object):
         port = port or DEFAULT_GEARMAN_PORT
         self.gearman_host = host
         self.gearman_port = port
+        self.internal = False
 
         if host is None:
             raise ServerUnavailable("No host specified")
