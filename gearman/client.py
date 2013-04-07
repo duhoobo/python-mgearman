@@ -30,28 +30,46 @@ class GearmanClient(GearmanConnectionManager):
 
         # The authoritative copy of all requests that this client knows about
         # Ignores the fact if a request has been bound to a connection or not
-        self.request_to_rotating_connection_queue = weakref.WeakKeyDictionary(compat.defaultdict(collections.deque))
+        self.request_to_rotating_connection_queue = weakref.WeakKeyDictionary(
+            compat.defaultdict(collections.deque))
 
-    def submit_job(self, task, data, unique=None, priority=PRIORITY_NONE, background=False, wait_until_complete=True, max_retries=0, poll_timeout=None):
+    def submit_job(self, task, data, unique=None, priority=PRIORITY_NONE, 
+                   background=False, wait_until_complete=True, max_retries=0, 
+                   poll_timeout=None):
         """Submit a single job to any gearman server"""
         job_info = dict(task=task, data=data, unique=unique, priority=priority)
-        completed_job_list = self.submit_multiple_jobs([job_info], background=background, wait_until_complete=wait_until_complete, max_retries=max_retries, poll_timeout=poll_timeout)
+        completed_job_list = self.submit_multiple_jobs(
+            [job_info], background=background, 
+            wait_until_complete=wait_until_complete, max_retries=max_retries, 
+            poll_timeout=poll_timeout)
+
         return gearman.util.unlist(completed_job_list)
 
-    def submit_multiple_jobs(self, jobs_to_submit, background=False, wait_until_complete=True, max_retries=0, poll_timeout=None):
+    def submit_multiple_jobs(self, jobs_to_submit, background=False, 
+                             wait_until_complete=True, max_retries=0, 
+                             poll_timeout=None):
         """Takes a list of jobs_to_submit with dicts of
 
         {'task': task, 'data': data, 'unique': unique, 'priority': priority}
         """
-        assert type(jobs_to_submit) in (list, tuple, set), "Expected multiple jobs, received 1?"
+        assert type(jobs_to_submit) in (list, tuple, set), \
+                "Expected multiple jobs, received 1?"
 
         # Convert all job dicts to job request objects
-        requests_to_submit = [self._create_request_from_dictionary(job_info, background=background, max_retries=max_retries) for job_info in jobs_to_submit]
+        requests_to_submit = [
+            self._create_request_from_dictionary(job_info, 
+                                                 background=background, 
+                                                 max_retries=max_retries) 
+            for job_info in jobs_to_submit]
 
-        return self.submit_multiple_requests(requests_to_submit, wait_until_complete=wait_until_complete, poll_timeout=poll_timeout)
+        return self.submit_multiple_requests(
+            requests_to_submit, wait_until_complete=wait_until_complete, 
+            poll_timeout=poll_timeout)
 
-    def submit_multiple_requests(self, job_requests, wait_until_complete=True, poll_timeout=None):
-        """Take GearmanJobRequests, assign them connections, and request that they be done.
+    def submit_multiple_requests(self, job_requests, wait_until_complete=True, 
+                                 poll_timeout=None):
+        """Take GearmanJobRequests, assign them connections, and request that 
+        they be done.
 
         * Blocks until our jobs are accepted (should be fast) OR times out
         * Optionally blocks until jobs are all complete
