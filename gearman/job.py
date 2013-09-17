@@ -1,36 +1,52 @@
+import weakref
 import collections
-from gearman.constants import PRIORITY_NONE, JOB_UNKNOWN, JOB_PENDING, JOB_CREATED, JOB_FAILED, JOB_COMPLETE
+from gearman.constants import PRIORITY_NONE, JOB_UNKNOWN, JOB_PENDING, \
+        JOB_CREATED, JOB_FAILED, JOB_COMPLETE
 
 class GearmanJob(object):
-    """Represents the basics of a job... used in GearmanClient / GearmanWorker to represent job states"""
-    def __init__(self, connection, handle, task, unique, data):
-        self.connection = connection
-        self.handle = handle
+    """Represents the basics of a job... used in GearmanClient / GearmanWorker 
+    to represent job states"""
+    def __init__(self, handler, handle, task, unique, data):
+        self.handler = weakref.proxy(handler)
 
+        self.handle = handle
         self.task = task
         self.unique = unique
         self.data = data
 
+    @property
+    def handler(self):
+        return self.handler
+
+    @handler.setter
+    def handler(self, handler):
+        self.handler = handler
+
     def to_dict(self):
-        return dict(task=self.task, job_handle=self.handle, unique=self.unique, data=self.data)
+        return dict(task=self.task, job_handle=self.handle, unique=self.unique, 
+                    data=self.data)
 
     def __repr__(self):
-        return '<GearmanJob connection/handle=(%r, %r), task=%s, unique=%s, data=%r>' % (self.connection, self.handle, self.task, self.unique, self.data)
+        return '<GearmanJob handler/handle=(%r, %r), task=%s, unique=%s, data=%r>' % (
+            self.handler, self.handle, self.task, self.unique, self.data)
+
 
 class GearmanJobRequest(object):
-    """Represents a job request... used in GearmanClient to represent job states"""
-    def __init__(self, gearman_job, initial_priority=PRIORITY_NONE, background=False, max_attempts=1):
-        self.gearman_job = gearman_job
+    """Represents a job request... used in GearmanClient to represent job 
+    states"""
+    def __init__(self, job, priority=PRIORITY_NONE, 
+                 background=False, max_attempts=1):
+        self.job = job 
 
-        self.priority = initial_priority
+        self.priority = priority
         self.background = background
 
-        self.connection_attempts = 0
-        self.max_connection_attempts = max_attempts
+        self.connect_attempts = 0
+        self.max_connect_attempts = max_attempts
 
-        self.initialize_request()
+        self.initialize()
 
-    def initialize_request(self):
+    def initialize(self):
         # Holds WORK_COMPLETE responses
         self.result = None
 
@@ -48,8 +64,7 @@ class GearmanJobRequest(object):
         self.timed_out = False
 
     def reset(self):
-        self.initialize_request()
-        self.connection = None
+        self.initialize()
         self.handle = None
 
     @property
@@ -68,16 +83,20 @@ class GearmanJobRequest(object):
 
     @property
     def job(self):
-        return self.gearman_job
+        return self.job
 
     @property
     def complete(self):
-        background_complete = bool(self.background and self.state in (JOB_CREATED))
-        foreground_complete = bool(not self.background and self.state in (JOB_FAILED, JOB_COMPLETE))
+        background_complete = bool(self.background and 
+                                   self.state in (JOB_CREATED))
+        foreground_complete = bool(not self.background 
+                                   and self.state in (JOB_FAILED, JOB_COMPLETE))
 
         actually_complete = background_complete or foreground_complete
         return actually_complete
 
     def __repr__(self):
-        formatted_representation = '<GearmanJobRequest task=%r, unique=%r, priority=%r, background=%r, state=%r, timed_out=%r>'
-        return formatted_representation % (self.job.task, self.job.unique, self.priority, self.background, self.state, self.timed_out)
+        formatted_representation = "<GearmanJobRequest task=%r, unique=%r, priority=%r, background=%r, state=%r, timed_out=%r>"
+        return formatted_representation % (self.job.task, self.job.unique, 
+                                           self.priority, self.background, 
+                                           self.state, self.timed_out)

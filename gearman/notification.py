@@ -1,15 +1,22 @@
 import os
 import fcntl
+import weakref
 import logging
 
-gearman_logger = logging.getLogger(__name__)
+from gearman.errors import ConnectionError
 
 class _NotificationHandler(object):
     def __init__(self, manager=None):
-        self.connection_manager = manager
+        self.manager = weakref.proxy(manager)
+
+    def set_state(self, **kwargs):
+        pass
 
 class _NotificationConnection(object):
-    def __init__(self):
+    def __init__(self, manager, handler_class):
+        self.manager = weakref.proxy(manager)
+        self.handler = handler_class(self)
+
         self.peer_read = None
         self.peer_send = None
         self.connected = False
@@ -21,20 +28,28 @@ class _NotificationConnection(object):
     def readable(self):
         return self.connected
 
-    def connect(self):
+    def fileno(self):
+        if self.peer_read is None:
+            self.throw_exception("read peer not open")
+
+        return self.peer_read
+
+    def connect(self, **kwargs):
         if self.connected:
             self.throw_exception(message='connection already established')
 
         try:
             self.peer_read, self.peer_send = os.pipe()
 
-            self._setblocking(self, self.peer_read, False)
-            self._setblocking(self, self.peer_send, False)
+            self._setblocking(self.peer_read, False)
+            self._setblocking(self.peer_send, False)
 
             self.connected = True
-        except Exception as exception
+        except Exception as exception:
             self.close()
             self.throw_exception(exception=exception)
+
+        self.handler.set_state(**kwargs)
 
     def _setblocking(self, fd, blocking=True):
         try:
@@ -47,18 +62,20 @@ class _NotificationConnection(object):
             self.throw_exception(exception=io_exception)
 
     def read_command(self):
+        cmd = None
         try:
-            _ = os.read(self.peer_read, 1024)
+            cmd = os.read(self.peer_read, 1)
+            logging.debug("Notification pipe got: %s" % cmd)
         except os.error as os_exception:
-            self.close()
             self.throw_exception(exception=None)
 
-    def send_command(self):
+        return cmd
+
+    def send_command(self, command='w', **kwargs):
         try:
-            _ = os.write(self.peer_send, 'z')
+            _ = os.write(self.peer_send, command)
         except os.error as os_exception:
             if os_exception.errno != errno.EAGAIN:
-                self.close()
                 self.throw_exception(exception=None)
 
     def close(self):
@@ -85,6 +102,6 @@ class _NotificationConnection(object):
         raise ConnectionError(rewritten_message)
 
     def __repr__(self):
-        return ('<_NotificationConnection Pipe(r%d:w%d) connected=%s>' % (
-            self.connected, self.peer_read, self.peer_send))
+        return ('<_NotificationConnection (r%s:w%s) connected=%s internal=%s>' %
+                (self.peer_read, self.peer_send, self.connected, self.internal))
 

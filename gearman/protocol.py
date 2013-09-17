@@ -150,7 +150,7 @@ GEARMAN_SERVER_COMMAND_MAXQUEUE = 'maxqueue'
 GEARMAN_SERVER_COMMAND_SHUTDOWN = 'shutdown'
 
 def get_command_name(cmd_type):
-    return GEARMAN_COMMAND_TO_NAME.get(cmd_type, cmd_type)
+    return GEARMAN_COMMAND_TO_NAME.get(cmd_type, None)
 
 def submit_cmd_for_background_priority(background, priority):
     cmd_type_lookup = {
@@ -165,7 +165,7 @@ def submit_cmd_for_background_priority(background, priority):
     cmd_type = cmd_type_lookup[lookup_tuple]
     return cmd_type
 
-def parse_binary_command(in_buffer, is_response=True):
+def parse_binary_command(in_buffer):
     """Parse data and return (command type, command arguments dict, command size)
     or (None, None, data) if there's not enough data for a complete command.
     """
@@ -183,9 +183,7 @@ def parse_binary_command(in_buffer, is_response=True):
     # By default, we'll assume we're dealing with a gearman command
     magic, cmd_type, cmd_len = struct.unpack('!4sII', in_buffer[:COMMAND_HEADER_SIZE])
 
-    received_bad_response = is_response and bool(magic != MAGIC_RES_STRING)
-    received_bad_request = not is_response and bool(magic != MAGIC_REQ_STRING)
-    if received_bad_response or received_bad_request:
+    if magic != MAGIC_RES_STRING:
         raise ProtocolError('Malformed Magic')
 
     expected_cmd_params = GEARMAN_PARAMS_FOR_COMMAND.get(cmd_type, None)
@@ -218,7 +216,7 @@ def parse_binary_command(in_buffer, is_response=True):
     return cmd_type, cmd_args, expected_packet_size
 
 
-def pack_binary_command(cmd_type, cmd_args, is_response=False):
+def pack_binary_command(cmd_type, cmd_args):
     """Packs the given command using the parameter ordering specified in GEARMAN_PARAMS_FOR_COMMAND.
     *NOTE* Expects that all arguments in cmd_args are already str's.
     """
@@ -230,12 +228,6 @@ def pack_binary_command(cmd_type, cmd_args, is_response=False):
     received_parameter_set = set(cmd_args.keys())
     if expected_parameter_set != received_parameter_set:
         raise ProtocolError('Received arguments did not match expected arguments: %r != %r' % (expected_parameter_set, received_parameter_set))
-
-    # Select the right expected magic
-    if is_response:
-        magic = MAGIC_RES_STRING
-    else:
-        magic = MAGIC_REQ_STRING
 
     # !NOTE! str should be replaced with bytes in Python 3.x
     # We will iterate in ORDER and str all our command arguments
@@ -253,7 +245,9 @@ def pack_binary_command(cmd_type, cmd_args, is_response=False):
     # Pack the header in the !4sII format then append the binary payload
     payload_size = len(binary_payload)
     packing_format = '!4sII%ds' % payload_size
-    return struct.pack(packing_format, magic, cmd_type, payload_size, binary_payload)
+
+    return struct.pack(packing_format, MAGIC_REQ_STRING, cmd_type, payload_size,
+                       binary_payload)
 
 def parse_text_command(in_buffer):
     """Parse a text command and return a single line at a time"""

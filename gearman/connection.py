@@ -4,13 +4,13 @@ import logging
 import socket
 import struct
 import time
+import weakref
+import logging
 
 from gearman.errors import ConnectionError, ProtocolError, ServerUnavailable
-from gearman.constants import DEFAULT_GEARMAN_PORT, _DEBUG_MODE_
-from gearman.protocol import GEARMAN_PARAMS_FOR_COMMAND, GEARMAN_COMMAND_TEXT_COMMAND, NULL_CHAR, \
-    get_command_name, pack_binary_command, parse_binary_command, parse_text_command, pack_text_command
-
-gearman_logger = logging.getLogger(__name__)
+from gearman.constants import DEFAULT_GEARMAN_PORT
+import gearman.protocol as protocol
+import gearman.log as log
 
 
 class GearmanConnection(object):
@@ -27,26 +27,43 @@ class GearmanConnection(object):
     """
     connect_cooldown_seconds = 1.0
 
-    def __init__(self, host=None, port=DEFAULT_GEARMAN_PORT):
-        port = port or DEFAULT_GEARMAN_PORT
-        self.gearman_host = host
-        self.gearman_port = port
+    def __init__(self, manager, handler_klass, host=None, 
+                 port=DEFAULT_GEARMAN_PORT):
+        self.manager = weakref.proxy(manager)
+        self.handler = handler_klass(self)
         self.internal = False
+
+        self._server_host = host
+        self._server_port = port
 
         if host is None:
             raise ServerUnavailable("No host specified")
 
         self._reset_connection()
 
+    @property
+    def manager(self):
+        return self.manager
+
+    @property
+    def handler(self):
+        return self.handler
+
+    @property
+    def internal(self):
+        return self.internal
+
+    @property
+    def connected(self):
+        return self.connected
+
     def _reset_connection(self):
         """Reset the state of this connection"""
         self.connected = False
-        self.gearman_socket = None
+        self.sock = None
+        self.write_only = False
 
         self.allowed_connect_time = 0.0
-
-        self._is_client_side = None
-        self._is_server_side = None
 
         # Reset all our raw data buffers
         self._incoming_buffer = array.array('c')
@@ -58,61 +75,61 @@ class GearmanConnection(object):
 
     def fileno(self):
         """Implements fileno() for use with select.select()"""
-        if not self.gearman_socket:
+        if not self.sock:
             self.throw_exception(message='no socket set')
 
-        return self.gearman_socket.fileno()
+        return self.sock.fileno()
 
     def get_address(self):
         """Returns the host and port"""
-        return (self.gearman_host, self.gearman_port)
+        return (self._server_host, self._server_port)
 
     def writable(self):
         """Returns True if we have data to write"""
-        return self.connected and bool(self._outgoing_commands or self._outgoing_buffer)
+        with self.manager.lock:
+            return self.connected and bool(self._outgoing_commands or 
+                                           self._outgoing_buffer)
 
     def readable(self):
         """Returns True if we might have data to read"""
-        return self.connected
+        return self.connected and not self.write_only
 
-    def connect(self):
+    def connect(self, **state):
         """Connect to the server. Raise ConnectionError if connection fails."""
         if self.connected:
             self.throw_exception(message='connection already established')
 
         current_time = time.time()
         if current_time < self.allowed_connect_time:
-            self.throw_exception(message='attempted to connect before required cooldown')
+            self.throw_exception(message='attempted to connect too often')
 
         self.allowed_connect_time = current_time + self.connect_cooldown_seconds
 
         self._reset_connection()
-
         self._create_client_socket()
+        self.handler.set_state(**state)
 
         self.connected = True
-        self._is_client_side = True
-        self._is_server_side = False
 
     def _create_client_socket(self):
-        """Creates a client side socket and subsequently binds/configures our socket options"""
-        try:
-            client_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-            client_socket.connect((self.gearman_host, self.gearman_port))
-        except socket.error, socket_exception:
-            self.throw_exception(exception=socket_exception)
-
-        self.set_socket(client_socket)
-
-    def set_socket(self, current_socket):
-        """Setup common options for all Gearman-related sockets"""
-        if self.gearman_socket:
+        """Creates a client side socket and subsequently binds/configures our 
+        socket options"""
+        if self.sock:
             self.throw_exception(message='socket already bound')
 
-        current_socket.setblocking(0)
-        current_socket.settimeout(0.0)
-        current_socket.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, struct.pack('L', 1))
-        self.gearman_socket = current_socket
+        try:
+            new_sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            new_sock.connect((self._server_host, self._server_port))
+
+            new_sock.setblocking(0)
+            new_sock.settimeout(0.0)
+            new_sock.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 
+                                     struct.pack('L', 1))
+        except socket.error, socket_exception:
+            new_sock.close()
+            self.throw_exception(exception=socket_exception)
+
+        self.sock = new_sock 
 
     def read_command(self):
         """Reads a single command from the command queue"""
@@ -136,6 +153,8 @@ class GearmanConnection(object):
             self._incoming_commands.append((cmd_type, cmd_args))
             self._incoming_buffer = self._incoming_buffer[cmd_len:]
 
+        self.handler.fetch_commands()
+
         return received_commands
 
     def read_data_from_socket(self, bytes_to_read=4096):
@@ -145,7 +164,7 @@ class GearmanConnection(object):
 
         recv_buffer = ''
         try:
-            recv_buffer = self.gearman_socket.recv(bytes_to_read)
+            recv_buffer = self.sock.recv(bytes_to_read)
         except socket.error, socket_exception:
             self.throw_exception(exception=socket_exception)
 
@@ -157,38 +176,39 @@ class GearmanConnection(object):
 
     def _unpack_command(self, given_buffer):
         """Conditionally unpack a binary command or a text based server command"""
-        assert self._is_client_side is not None, "Ambiguous connection state"
-
         if not given_buffer:
-            cmd_type = None
-            cmd_args = None
-            cmd_len = 0
-        elif given_buffer[0] == NULL_CHAR:
+            cmd_type, cmd_args, cmd_len = None, None, 0
+        elif given_buffer[0] == protocol.NULL_CHAR:
             # We'll be expecting a response if we know we're a client side command
-            is_response = bool(self._is_client_side)
-            cmd_type, cmd_args, cmd_len = parse_binary_command(given_buffer, is_response=is_response)
+            cmd_type, cmd_args, cmd_len = protocol.parse_binary_command(
+                given_buffer)
         else:
-            cmd_type, cmd_args, cmd_len = parse_text_command(given_buffer)
+            cmd_type, cmd_args, cmd_len = protocol.parse_text_command(
+                given_buffer)
 
-        if _DEBUG_MODE_ and cmd_type is not None:
-            gearman_logger.debug('%s - Recv - %s - %r', hex(id(self)), get_command_name(cmd_type), cmd_args)
+        log.msg("%s - recv - %s - %r" %  (
+            id(self), protocol.get_command_name(cmd_type), cmd_args), 
+            loglevel=logging.DEBUG)
 
         return cmd_type, cmd_args, cmd_len
 
     def send_command(self, cmd_type, cmd_args):
         """Adds a single gearman command to the outgoing command queue"""
-        self._outgoing_commands.append((cmd_type, cmd_args))
+        with self.manager.lock:
+            self._outgoing_commands.append((cmd_type, cmd_args))
 
     def send_commands_to_buffer(self):
         """Sends and packs commands -> buffer"""
-        if not self._outgoing_commands:
-            return
-
         packed_data = [self._outgoing_buffer]
-        while self._outgoing_commands:
-            cmd_type, cmd_args = self._outgoing_commands.popleft()
-            packed_command = self._pack_command(cmd_type, cmd_args)
-            packed_data.append(packed_command)
+
+        with self.manager.lock:
+            if not self._outgoing_commands:
+                return
+
+            while self._outgoing_commands:
+                cmd_type, cmd_args = self._outgoing_commands.popleft()
+                packed_command = self._pack_command(cmd_type, cmd_args)
+                packed_data.append(packed_command)
 
         self._outgoing_buffer = ''.join(packed_data)
 
@@ -204,7 +224,7 @@ class GearmanConnection(object):
             return 0
 
         try:
-            bytes_sent = self.gearman_socket.send(self._outgoing_buffer)
+            bytes_sent = self.sock.send(self._outgoing_buffer)
         except socket.error, socket_exception:
             self.throw_exception(exception=socket_exception)
 
@@ -216,28 +236,32 @@ class GearmanConnection(object):
 
     def _pack_command(self, cmd_type, cmd_args):
         """Converts a command to its raw binary format"""
-        if cmd_type not in GEARMAN_PARAMS_FOR_COMMAND:
-            raise ProtocolError('Unknown command: %r' % get_command_name(cmd_type))
+        if cmd_type not in protocol.GEARMAN_PARAMS_FOR_COMMAND:
+            raise ProtocolError('Unknown command: %r' % 
+                                protocol.get_command_name(cmd_type))
 
-        if _DEBUG_MODE_:
-            gearman_logger.debug('%s - Send - %s - %r', hex(id(self)), get_command_name(cmd_type), cmd_args)
+        log.msg("%s - send - %s - %r" % (
+            id(self), protocol.get_command_name(cmd_type), cmd_args), 
+            logging.DEBUG)
 
-        if cmd_type == GEARMAN_COMMAND_TEXT_COMMAND:
-            return pack_text_command(cmd_type, cmd_args)
+        if cmd_type == protocol.GEARMAN_COMMAND_TEXT_COMMAND:
+            return protocol.pack_text_command(cmd_type, cmd_args)
         else:
-            # We'll be sending a response if we know we're a server side command
-            is_response = bool(self._is_server_side)
-            return pack_binary_command(cmd_type, cmd_args, is_response)
+            return protocol.pack_binary_command(cmd_type, cmd_args)
 
     def close(self):
         """Shutdown our existing socket and reset all of our connection data"""
         try:
-            if self.gearman_socket:
-                self.gearman_socket.close()
+            if self.sock:
+                self.sock.close()
         except socket.error:
             pass
 
+        self.handler.close()
         self._reset_connection()
+
+    def on_io_error(self):
+        self.handler.on_io_error()
 
     def throw_exception(self, message=None, exception=None):
         # Mark us as disconnected but do NOT call self._reset_connection()
@@ -247,9 +271,10 @@ class GearmanConnection(object):
         if exception:
             message = repr(exception)
 
-        rewritten_message = "<%s:%d> %s" % (self.gearman_host, self.gearman_port, message)
+        rewritten_message = "<%s:%d> %s" % (self._server_host, self._server_port, message)
         raise ConnectionError(rewritten_message)
 
     def __repr__(self):
-        return ('<GearmanConnection %s:%d connected=%s>' %
-            (self.gearman_host, self.gearman_port, self.connected))
+        return ('<GearmanConnection %s:%d connected=%s internal=%s>' %
+            (self._server_host, self._server_port, self.connected, self.internal))
+

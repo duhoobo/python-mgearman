@@ -66,7 +66,7 @@ def select(rlist, wlist, xlist, timeout=None):
 
     return rd_list, wr_list, ex_list
 
-def unlist(given_list):
+def advance_list(given_list):
     """Convert the (possibly) single item list into a single item"""
     list_size = len(given_list)
     if list_size == 0:
