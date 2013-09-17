@@ -1,5 +1,5 @@
 import struct
-from gearman.constants import PRIORITY_NONE, PRIORITY_LOW, PRIORITY_HIGH
+from gearman.job import PRIORITY_NONE, PRIORITY_LOW, PRIORITY_HIGH
 from gearman.errors import ProtocolError
 from gearman import compat
 # Protocol specific constants
@@ -143,16 +143,16 @@ GEARMAN_COMMAND_TO_NAME = {
     GEARMAN_COMMAND_TEXT_COMMAND: 'GEARMAN_COMMAND_TEXT_COMMAND'
 }
 
-GEARMAN_SERVER_COMMAND_STATUS = 'status'
-GEARMAN_SERVER_COMMAND_VERSION = 'version'
-GEARMAN_SERVER_COMMAND_WORKERS = 'workers'
-GEARMAN_SERVER_COMMAND_MAXQUEUE = 'maxqueue'
-GEARMAN_SERVER_COMMAND_SHUTDOWN = 'shutdown'
+GEARMAN_ADMIN_COMMAND_STATUS = 'status'
+GEARMAN_ADMIN_COMMAND_VERSION = 'version'
+GEARMAN_ADMIN_COMMAND_WORKERS = 'workers'
+GEARMAN_ADMIN_COMMAND_MAXQUEUE = 'maxqueue'
+GEARMAN_ADMIN_COMMAND_SHUTDOWN = 'shutdown'
 
 def get_command_name(cmd_type):
     return GEARMAN_COMMAND_TO_NAME.get(cmd_type, None)
 
-def submit_cmd_for_background_priority(background, priority):
+def get_background_cmd_type(background, priority):
     cmd_type_lookup = {
         (True, PRIORITY_NONE): GEARMAN_COMMAND_SUBMIT_JOB_BG,
         (True, PRIORITY_LOW): GEARMAN_COMMAND_SUBMIT_JOB_LOW_BG,

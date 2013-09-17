@@ -1,20 +1,18 @@
 import collections
 import logging
 
-from gearman.command_handler import GearmanCommandHandler
+from gearman.commandhandler import GearmanCommandHandler
 from gearman.errors import ProtocolError, InvalidAdminClientState
-from gearman.protocol import GEARMAN_COMMAND_ECHO_REQ, \
-        GEARMAN_COMMAND_TEXT_COMMAND, GEARMAN_SERVER_COMMAND_STATUS, \
-        GEARMAN_SERVER_COMMAND_VERSION, GEARMAN_SERVER_COMMAND_WORKERS, \
-        GEARMAN_SERVER_COMMAND_MAXQUEUE, GEARMAN_SERVER_COMMAND_SHUTDOWN
-import greaman.log as log
+import gearman.protocol as protocol
+import gearman.log as log
 
-GEARMAN_ALLOWED_ADMIN_COMMANDS = set([GEARMAN_ADMIN_COMMAND_STATUS, 
-                              GEARMAN_ADMIN_COMMAND_VERSION, 
-                              GEARMAN_ADMIN_COMMAND_WORKERS, 
-                              GEARMAN_ADMIN_COMMAND_MAXQUEUE, 
-                              GEARMAN_ADMIN_COMMAND_SHUTDOWN,
-                             ])
+GEARMAN_ALLOWED_ADMIN_COMMANDS = set([
+    protocol.GEARMAN_ADMIN_COMMAND_STATUS, 
+    protocol.GEARMAN_ADMIN_COMMAND_VERSION, 
+    protocol.GEARMAN_ADMIN_COMMAND_WORKERS, 
+    protocol.GEARMAN_ADMIN_COMMAND_MAXQUEUE, 
+    protocol.GEARMAN_ADMIN_COMMAND_SHUTDOWN,
+])
 
 
 class GearmanAdminCommandHandler(GearmanCommandHandler):
@@ -59,12 +57,12 @@ class GearmanAdminCommandHandler(GearmanCommandHandler):
         self._sent_commands.append(command)
 
         output_text = '%s\n' % command_line
-        self.send_command(GEARMAN_COMMAND_TEXT_COMMAND, raw_text=output_text)
+        self.send_command(protocol.GEARMAN_COMMAND_TEXT_COMMAND, raw_text=output_text)
 
     def send_echo_request(self, echo_string):
         """Send our administrative text command"""
-        self._sent_commands.append(GEARMAN_COMMAND_ECHO_REQ)
-        self.send_command(GEARMAN_COMMAND_ECHO_REQ, data=echo_string)
+        self._sent_commands.append(protocol.GEARMAN_COMMAND_ECHO_REQ)
+        self.send_command(protocol.GEARMAN_COMMAND_ECHO_REQ, data=echo_string)
 
     def recv_echo_res(self, data):
         self._recv_responses.append(data)

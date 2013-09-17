@@ -13,12 +13,43 @@ import gearman.protocol as protocol
 import gearman.log as log
 
 
-class GearmanConnection(object):
-    """A connection between a client/worker and a server.  Can be used to reconnect (unlike a socket)
+class GearmanBaseConnection(object):
+    def __init__(self, manager, handler_class):
+        self.manager = weakref.proxy(manager)
+        self.handler = handler_class(self)
+        self.internal = False
+        self.connected = False
+
+    def fileno(self):
+        raise NotImplementedError
+    def writable(self):
+        raise NotImplementedError
+    def readable(self):
+        raise NotImplementedError
+    def connect(self, **kwargs):
+        raise NotImplementedError
+    def read_command(self):
+        raise NotImplementedError
+    def send_command(self, command, **kwargs):
+        raise NotImplementedError
+    def close(self):
+        raise NotImplementedError
+    def on_io_error(self):
+        raise NotImplementedError
+    def throw_exception(self, message=None, exception=None):
+        raise NotImplementedError
+    def __repr__(self):
+        raise NotImplementedError
+
+
+class GearmanConnection(GearmanBaseConnection):
+    """A connection between a client/worker and a server.  Can be used to 
+    reconnect (unlike a socket)
 
     Wraps a socket and provides the following functionality:
         Full read/write methods for Gearman BINARY commands and responses
-        Full read/write methods for Gearman SERVER commands and responses (using GEARMAN_COMMAND_TEXT_COMMAND)
+        Full read/write methods for Gearman SERVER commands and responses (using
+        GEARMAN_COMMAND_TEXT_COMMAND)
 
         Manages raw data buffers for socket-level operations
         Manages command buffers for gearman-level operations
@@ -29,10 +60,7 @@ class GearmanConnection(object):
 
     def __init__(self, manager, handler_klass, host=None, 
                  port=DEFAULT_GEARMAN_PORT):
-        self.manager = weakref.proxy(manager)
-        self.handler = handler_klass(self)
-        self.internal = False
-
+        super(GearmanConnection, self).__init__(manager, handler_klass)
         self._server_host = host
         self._server_port = port
 
@@ -40,22 +68,6 @@ class GearmanConnection(object):
             raise ServerUnavailable("No host specified")
 
         self._reset_connection()
-
-    @property
-    def manager(self):
-        return self.manager
-
-    @property
-    def handler(self):
-        return self.handler
-
-    @property
-    def internal(self):
-        return self.internal
-
-    @property
-    def connected(self):
-        return self.connected
 
     def _reset_connection(self):
         """Reset the state of this connection"""

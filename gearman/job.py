@@ -1,13 +1,21 @@
 import weakref
 import collections
-from gearman.constants import PRIORITY_NONE, JOB_UNKNOWN, JOB_PENDING, \
-        JOB_CREATED, JOB_FAILED, JOB_COMPLETE
+
+PRIORITY_NONE = None
+PRIORITY_LOW  = 'LOW'
+PRIORITY_HIGH = 'HIGH'
+
+JOB_UNKNOWN  = 'UNKNOWN'  # Request state is currently unknown
+JOB_PENDING  = 'PENDING'  # Request has been submitted, pending handle
+JOB_CREATED  = 'CREATED'  # Request has been accepted
+JOB_FAILED   = 'FAILED'   # Request received an explicit fail
+JOB_COMPLETE = 'COMPLETE' # Request received an explicit complete
 
 class GearmanJob(object):
     """Represents the basics of a job... used in GearmanClient / GearmanWorker 
     to represent job states"""
     def __init__(self, handler, handle, task, unique, data):
-        self.handler = weakref.proxy(handler)
+        self._handler = weakref.proxy(handler) if handler else None
 
         self.handle = handle
         self.task = task
@@ -16,11 +24,11 @@ class GearmanJob(object):
 
     @property
     def handler(self):
-        return self.handler
+        return self._handler
 
     @handler.setter
     def handler(self, handler):
-        self.handler = handler
+        self._handler = weakref.proxy(handler) if handler else None
 
     def to_dict(self):
         return dict(task=self.task, job_handle=self.handle, unique=self.unique, 
@@ -72,7 +80,8 @@ class GearmanJobRequest(object):
         """Deprecated since 2.0.1, removing in next major release"""
         output_queue = collections.deque()
         if self.status:
-            output_queue.append((self.status.get('numerator', 0), self.status.get('denominator', 0)))
+            output_queue.append((self.status.get('numerator', 0), 
+                                 self.status.get('denominator', 0)))
 
         return output_queue
 
@@ -80,10 +89,6 @@ class GearmanJobRequest(object):
     def server_status(self):
         """Deprecated since 2.0.1, removing in next major release"""
         return self.status
-
-    @property
-    def job(self):
-        return self.job
 
     @property
     def complete(self):

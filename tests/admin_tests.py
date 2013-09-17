@@ -1,19 +1,24 @@
 import unittest
 
-from gearman.admin_client import GearmanAdminClient, ECHO_STRING
-from gearman.admin_client_handler import GearmanAdminClientCommandHandler
+from gearman.admin import GearmanAdmin, ECHO_STRING
+from gearman.admin_handler import GearmanAdminCommandHandler
 
 from gearman.errors import InvalidAdminClientState, ProtocolError
-from gearman.protocol import GEARMAN_COMMAND_ECHO_RES, GEARMAN_COMMAND_ECHO_REQ, GEARMAN_COMMAND_TEXT_COMMAND, \
-    GEARMAN_SERVER_COMMAND_STATUS, GEARMAN_SERVER_COMMAND_VERSION, GEARMAN_SERVER_COMMAND_WORKERS, GEARMAN_SERVER_COMMAND_MAXQUEUE, GEARMAN_SERVER_COMMAND_SHUTDOWN
+from gearman.protocol import GEARMAN_COMMAND_ECHO_RES, \
+        GEARMAN_COMMAND_ECHO_REQ, GEARMAN_COMMAND_TEXT_COMMAND, \
+        GEARMAN_ADMIN_COMMAND_STATUS, GEARMAN_ADMIN_COMMAND_VERSION, \
+        GEARMAN_ADMIN_COMMAND_WORKERS, GEARMAN_ADMIN_COMMAND_MAXQUEUE, \
+        GEARMAN_ADMIN_COMMAND_SHUTDOWN
 
-from tests._core_testing import _GearmanAbstractTest, MockGearmanConnectionManager, MockGearmanConnection
+from tests._core_testing import _GearmanAbstractTest, \
+        MockGearmanConnectionManager, MockGearmanConnection
 
 class MockGearmanAdminClient(GearmanAdminClient, MockGearmanConnectionManager):
     pass
 
 class CommandHandlerStateMachineTest(_GearmanAbstractTest):
-    """Test the public interface a GearmanWorker may need to call in order to update state on a GearmanWorkerCommandHandler"""
+    """Test the public interface a GearmanWorker may need to call in order to
+    update state on a GearmanWorkerCommandHandler"""
     connection_manager_class = MockGearmanAdminClient
     command_handler_class = GearmanAdminClientCommandHandler
 

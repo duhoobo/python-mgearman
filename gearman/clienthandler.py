@@ -3,12 +3,11 @@ import time
 import logging
 import weakref
 
-from gearman.command_handler import GearmanCommandHandler
-from gearman.constants import JOB_UNKNOWN, JOB_PENDING, JOB_CREATED, \
+from gearman.commandhandler import GearmanCommandHandler
+from gearman.job import JOB_UNKNOWN, JOB_PENDING, JOB_CREATED, \
         JOB_FAILED, JOB_COMPLETE
 from gearman.errors import InvalidClientState
-from gearman.protocol import GEARMAN_COMMAND_GET_STATUS, \
-        submit_cmd_for_background_priority
+import gearman.protocol as protocol
 import gearman.log as log
 
 class GearmanClientCommandHandler(GearmanCommandHandler):
@@ -25,10 +24,8 @@ class GearmanClientCommandHandler(GearmanCommandHandler):
         """Register a newly created job request"""
         self._assert_request_state(request, JOB_UNKNOWN)
 
-        # Handle the I/O for requesting a job - determine which COMMAND we need 
-        # to send
-        cmd_type = submit_cmd_for_background_priority(request.background,
-                                                      request.priority)
+        cmd_type = protocol.get_background_cmd_type(request.background, 
+                                                    request.priority)
 
         data = self.encode_data(request.job.data)
         self.send_command(cmd_type, task=request.job.task, 
@@ -42,7 +39,8 @@ class GearmanClientCommandHandler(GearmanCommandHandler):
     def send_get_status_of_job(self, request):
         """Forward the status of a job"""
         self.request_trace[request.job.handle] = request
-        self.send_command(GEARMAN_COMMAND_GET_STATUS, job_handle=request.job.handle)
+        self.send_command(protocol.GEARMAN_COMMAND_GET_STATUS, 
+                          job_handle=request.job.handle)
 
     def on_io_error(self):
         for pending_request in self.request_queue:

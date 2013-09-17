@@ -2,37 +2,37 @@ import os
 import fcntl
 import weakref
 import logging
+from gearman.connection import GearmanBaseConnection
+from gearman.commandhandler import GearmanCommandHandler
 
 from gearman.errors import ConnectionError
 
-class _NotificationHandler(object):
+class _NotificationHandler(GearmanCommandHandler):
     def __init__(self, manager=None):
         self.manager = weakref.proxy(manager)
 
     def set_state(self, **kwargs):
         pass
 
-class _NotificationConnection(object):
+class _NotificationConnection(GearmanBaseConnection):
     def __init__(self, manager, handler_class):
-        self.manager = weakref.proxy(manager)
-        self.handler = handler_class(self)
+        super(_NotificationConnection, self).__init__(manager, handler_class)
+        self.internal = True
 
         self.peer_read = None
         self.peer_send = None
-        self.connected = False
-        self.internal = True
-
-    def writable(self):
-        return False
-
-    def readable(self):
-        return self.connected
 
     def fileno(self):
         if self.peer_read is None:
             self.throw_exception("read peer not open")
 
         return self.peer_read
+
+    def writable(self):
+        return False
+
+    def readable(self):
+        return self.connected
 
     def connect(self, **kwargs):
         if self.connected:
@@ -88,6 +88,9 @@ class _NotificationConnection(object):
             self.peer_send = None
 
         self.connected = False
+
+    def on_io_error(self):
+        pass
 
     def throw_exception(self, message=None, exception=None):
         # Mark us as disconnected but do NOT call self._reset_connection()

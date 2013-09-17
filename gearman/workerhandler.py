@@ -1,11 +1,9 @@
 import logging
-import gearman.command_handler 
+from gearman.commandhandler import GearmanCommandHandler
 import gearman.protocol as protocol
 import gearman.log as log
 
-gearman_logger = logging.getLogger(__name__)
-
-class GearmanWorkerCommandHandler(gearman.command_handler.GearmanCommandHandler):
+class GearmanWorkerCommandHandler(GearmanCommandHandler):
     """GearmanWorker state machine on a per connection basis
 
     A worker can be in the following distinct states:
@@ -101,7 +99,7 @@ class GearmanWorkerCommandHandler(gearman.command_handler.GearmanCommandHandler)
         if self.connection.write_only:
             return True
 
-        if self.connection.manager.reserve_thread():
+        if self.connection.manager.reserve():
             self.grabbing = True
             self._grab_job()
         else:
@@ -117,7 +115,7 @@ class GearmanWorkerCommandHandler(gearman.command_handler.GearmanCommandHandler)
                                  to do
         """
         self.grabbing = False
-        self.connection.manager.release_thread()
+        self.connection.manager.release()
         self._sleep()
 
         return True
@@ -125,7 +123,7 @@ class GearmanWorkerCommandHandler(gearman.command_handler.GearmanCommandHandler)
     def recv_error(self):
         if self.grabbing:
             self.grabbing = False
-            self.connection.manager.release_thread()
+            self.connection.manager.release()
 
         self._sleep()
         return True
@@ -154,5 +152,5 @@ class GearmanWorkerCommandHandler(gearman.command_handler.GearmanCommandHandler)
     def close(self):
         if self.grabbing:
             self.grabbing = False
-            self.connection.manager.release_thread()
+            self.connection.manager.release()
 

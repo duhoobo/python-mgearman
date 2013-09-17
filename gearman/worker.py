@@ -3,8 +3,8 @@ import random
 import logging
 
 from gearman import compat
-from gearman.connection_manager import GearmanConnectionManager
-from gearman.worker_handler import GearmanWorkerCommandHandler
+from gearman.connectionmanager import GearmanConnectionManager
+from gearman.workerhandler import GearmanWorkerCommandHandler
 from gearman.errors import ConnectionError, ServerUnavailable
 from gearman.threadpool import GearmanGeventPool
 from gearman.notification import _NotificationHandler, _NotificationConnection
@@ -135,7 +135,7 @@ class GearmanWorker(GearmanConnectionManager):
 
         while workable:
             workable = self.poll(self.establish_connections(), 
-                                 lambda: True, lambda: not self.terminated,
+                                 lambda: True, lambda: not self._terminated,
                                  timeout=poll_timeout)
 
             # try to finish unfinished jobs before exit this loop
@@ -195,13 +195,13 @@ class GearmanWorker(GearmanConnectionManager):
             except Exception:
                 self.send_job_exception(job, sys.exc_info())
 
-    def reserve_thread(self):
+    def reserve(self):
         if not self._concurrency:
             return True
         else:
             return self._thread_pool.reserve()
 
-    def release_thread(self):
+    def release(self):
         if not self._concurrency:
             return
         else:

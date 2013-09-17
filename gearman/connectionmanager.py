@@ -5,9 +5,10 @@ import gearman.util
 from gearman.connection import GearmanConnection
 from gearman.errors import ConnectionError, ServerUnavailable
 from gearman.job import GearmanJob, GearmanJobRequest
+from gearman.commandhandler import GearmanCommandHandler
 from gearman import compat
+import gearman.log as log
 
-gearman_logger = logging.getLogger(__name__)
 
 class DataEncoder(object):
     @classmethod
@@ -68,9 +69,9 @@ class GearmanConnectionManager(object):
 
     def __init__(self, host_ls=None):
         self.connection_ls = []
-        self.has_internal_connection = False
         self.lock = NoopLock()
         self.handler_state = {}
+        self.has_internal_connection = False
 
         host_ls = host_ls or []
         for host in host_ls:
@@ -89,7 +90,7 @@ class GearmanConnectionManager(object):
         """Add a new connection to this connection manager"""
         host, port = gearman.util.disambiguate_server_parameter(address)
 
-        connection = self.connection_class(self, self.command_handler_class
+        connection = self.connection_class(self, self.command_handler_class,
                                            host=host, port=port)
         self.connection_ls.append(connection)
 
@@ -216,7 +217,7 @@ class GearmanConnectionManager(object):
         connection.close()
 
     def on_server_error(self, error_code, error_text):
-        gearman_logger.error('Received error from server: %s: %s' % (error_code,
-                                                                     error_text))
+        log.msg('Received error from server: %s: %s' % (error_code, error_text),
+                logging.ERROR)
         return False
 

@@ -3,14 +3,11 @@ import time
 
 from gearman import util
 
-from gearman.connection_manager import GearmanConnectionManager
-from gearman.admin_client_handler import GearmanAdminClientCommandHandler
+from gearman.connectionmanager import GearmanConnectionManager
+from gearman.adminhandler import GearmanAdminCommandHandler
 from gearman.errors import ConnectionError, InvalidAdminClientState, \
         ServerUnavailable
-from gearman.protocol import GEARMAN_COMMAND_ECHO_RES, \
-        GEARMAN_COMMAND_ECHO_REQ, GEARMAN_SERVER_COMMAND_STATUS, \
-        GEARMAN_SERVER_COMMAND_VERSION, GEARMAN_SERVER_COMMAND_WORKERS, \
-        GEARMAN_SERVER_COMMAND_MAXQUEUE, GEARMAN_SERVER_COMMAND_SHUTDOWN
+import gearman.protocol as protocol
 import gearman.log as log
 
 ECHO_STRING = "ping? pong!"
@@ -25,7 +22,7 @@ class GearmanAdmin(GearmanConnectionManager):
     http://gearman.org/index.php?id=protocol
     See section 'Administrative Protocol'
     """
-    command_handler_class = GearmanAdminClientCommandHandler
+    command_handler_class = GearmanAdminCommandHandler
 
     def __init__(self, host_ls=None, timeout=DEFAULT_ADMIN_CLIENT_TIMEOUT):
         super(GearmanAdmin, self).__init__(host_ls=host_ls)
@@ -48,9 +45,9 @@ class GearmanAdmin(GearmanConnectionManager):
         Gearman server"""
         start_time = time.time()
 
-        self.handler = self.create_handler()
+        self.handler = self._create_handler()
         self.handler.send_echo_request(ECHO_STRING)
-        response = self._wait_for_response(GEARMAN_COMMAND_ECHO_REQ)
+        response = self._wait_for_response(protocol.GEARMAN_COMMAND_ECHO_REQ)
         if response != ECHO_STRING:
             raise InvalidAdminClientState("Echo string mismatch: got %s, expected %s" % (server_response, ECHO_STRING))
 
@@ -61,41 +58,41 @@ class GearmanAdmin(GearmanConnectionManager):
 
         self.handler = self._create_handler()
         self.handler.send_text_command('%s %s %s' % (
-            GEARMAN_SERVER_COMMAND_MAXQUEUE, task, max_size))
-        return self._wait_for_response(GEARMAN_SERVER_COMMAND_MAXQUEUE)
+            protocol.GEARMAN_ADMIN_COMMAND_MAXQUEUE, task, max_size))
+        return self._wait_for_response(protocol.GEARMAN_ADMIN_COMMAND_MAXQUEUE)
 
     def send_shutdown(self, graceful=True):
         """Sends a request to shutdown the connected gearman server"""
 
-        command = GEARMAN_SERVER_COMMAND_SHUTDOWN
+        command = protocol.GEARMAN_ADMIN_COMMAND_SHUTDOWN
         if graceful:
             command += ' graceful'
 
         self.handler = self._create_handler()
         self.handler.send_text_command(command)
-        return self._wait_for_response(GEARMAN_SERVER_COMMAND_SHUTDOWN)
+        return self._wait_for_response(protocol.GEARMAN_ADMIN_COMMAND_SHUTDOWN)
 
     def get_status(self):
         """Retrieves a list of all registered tasks and reports how many 
         items/workers are in the queue"""
 
         self.handler = self._create_handler()
-        self.handler.send_text_command(GEARMAN_SERVER_COMMAND_STATUS)
-        return self._wait_for_response(GEARMAN_SERVER_COMMAND_STATUS)
+        self.handler.send_text_command(protocol.GEARMAN_ADMIN_COMMAND_STATUS)
+        return self._wait_for_response(protocol.GEARMAN_ADMIN_COMMAND_STATUS)
 
     def get_version(self):
         """Retrieves the version number of the Gearman server"""
         self.handler = self._create_handler()
-        self.handler.send_text_command(GEARMAN_SERVER_COMMAND_VERSION)
-        return self._wait_for_response(GEARMAN_SERVER_COMMAND_VERSION)
+        self.handler.send_text_command(protocol.GEARMAN_ADMIN_COMMAND_VERSION)
+        return self._wait_for_response(protocol.GEARMAN_ADMIN_COMMAND_VERSION)
 
     def get_workers(self):
         """Retrieves a list of workers and reports what tasks they're operating 
         on"""
 
         self.handler = self._create_handler()
-        self.handler.send_text_command(GEARMAN_SERVER_COMMAND_WORKERS)
-        return self._wait_for_response(GEARMAN_SERVER_COMMAND_WORKERS)
+        self.handler.send_text_command(protocol.GEARMAN_ADMIN_COMMAND_WORKERS)
+        return self._wait_for_response(protocol.GEARMAN_ADMIN_COMMAND_WORKERS)
 
     def _wait_for_response(self, expected_cmd_type):
 
@@ -110,8 +107,7 @@ class GearmanAdmin(GearmanConnectionManager):
 
         cmd_type, cmd_resp = self.handler.pop_response()
         if cmd_type != expected_cmd_type:
-            raise InvalidAdminClientState('Received an unexpected response...
-                                          got command %r, expecting command %r'
+            raise InvalidAdminClientState('Received an unexpected response... got command %r, expecting command %r'
                                           % (cmd_type, expected_cmd_type))
 
         return cmd_resp
